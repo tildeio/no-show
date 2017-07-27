@@ -1,0 +1,22 @@
+{
+  "name": "no-show",
+  "version": "0.5.0",
+  "description": "Tasks, a.k.a. cancelable Promises.",
+  "contributors": [
+    "Godfrey Chan <godfrey@tilde.io>"
+  ],
+  "repository": "https://github.com/tildeio/no-show",
+  "main": "dist/commonjs/index.js",
+  "module": "dist/modules/index.js",
+  "types": "dist/types/index.d.ts",
+  "scripts": {
+    "build": "./scripts/build",
+    "test": "./scripts/build && ./scripts/test"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/qunit": "^2.0.31",
+    "qunitjs": "^2.4.0",
+    "typescript": "^2.4.2"
+  }
+}
