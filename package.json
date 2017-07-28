@@ -11,7 +11,7 @@
   "types": "dist/types/index.d.ts",
   "scripts": {
     "preversion": "npm run test",
-    "prepublish": "npm run build",
+    "prepare": "npm run build",
     "build": "./scripts/build",
     "test": "./scripts/build && ./scripts/test"
   },
