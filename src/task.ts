@@ -19,7 +19,6 @@ function runner(task: Task<any>): TaskRunner {
 }
 
 const enum Completion {
-  Scheduled,
   Running,
   Success,
   Error,
@@ -32,7 +31,7 @@ const UNINITIALIZED = {};
 
 // TODO: should Task subclass Promise?
 export default class Task<T> implements Promise<T> {
-  private _state = Completion.Scheduled;
+  private _state = Completion.Running;
   private _linked: Option<Set<Task<any>>> = null;
   private _promise: Promise<T>;
   private _cancel: (reason: any) => void;
@@ -67,18 +66,10 @@ export default class Task<T> implements Promise<T> {
         _reject(new CancelationError(reason));
       };
 
-      Promise.resolve().then(async () => {
+      let run = async () => {
         try {
+          let value = await func(runner(this));
           this.yield();
-
-          this._state = Completion.Running;
-
-          let run = runner(this);
-
-          let value = await func(run);
-
-          this.yield();
-
           resolve(value);
         } catch(error) {
           if (isCancelation(error)) {
@@ -87,7 +78,9 @@ export default class Task<T> implements Promise<T> {
             reject(error);
           }
         }
-      });
+      };
+
+      run();
     });
   }
 
@@ -106,21 +99,12 @@ export default class Task<T> implements Promise<T> {
     return this._state;
   }
 
-  get isScheduled(): boolean {
-    return this._syncState() === Completion.Scheduled;
-  }
-
   get isRunning(): boolean {
     return this._syncState() === Completion.Running;
   }
 
-  get isPending(): boolean {
-    let state = this._syncState();
-    return state === Completion.Scheduled || state === Completion.Running;
-  }
-
   get isDone(): boolean {
-    return !this.isPending;
+    return !this.isRunning;
   }
 
   get isSuccessful(): boolean {
@@ -136,28 +120,28 @@ export default class Task<T> implements Promise<T> {
   }
 
   get value(): T {
-    assert(!this.isPending, 'The task is still pending.');
+    assert(this.isDone, 'The task is still running.');
     assert(this.isSuccessful, 'The task did not complete successfully.');
 
     return this._result;
   }
 
   get error(): any {
-    assert(!this.isPending, 'The task is still pending.');
+    assert(this.isDone, 'The task is still running.');
     assert(this.isError, 'The task did not error.');
 
     return this._result;
   }
 
   get reason(): any {
-    assert(!this.isPending, 'The task is still pending.');
+    assert(this.isDone, 'The task is still running.');
     assert(this.isCanceled, 'The task was not canceled.');
 
     return this._result;
   }
 
   link<T>(other: Task<T>): Task<T> {
-    if (this.isPending) {
+    if (this.isRunning) {
       this._linked = this._linked || new Set();
       this._linked.add(other);
     }

@@ -3,24 +3,29 @@ import Task, { isCancelation } from '../src';
 QUnit.module('Task');
 
 QUnit.test('Running a basic task', async assert => {
-  let task = new Task(async run => 'it works');
+  let step = 0;
+
+  let task = new Task(async run => {
+    assert.equal(++step, 1, '1. Before return');
+    return 'it works';
+  });
+
+  assert.equal(step, 1, 'Task should be sync');
 
   assert.deepEqual(getState(task), {
-    isScheduled: true,
-    isRunning: false,
-    isPending: true,
+    isRunning: true,
     isDone: false,
     isSuccessful: false,
     isError: false,
     isCanceled: false
-  }, 'Scheduled');
+  }, 'Running');
 
   let value = await task;
 
+  assert.equal(step, 1);
+
   assert.deepEqual(getState(task), {
-    isScheduled: false,
     isRunning: false,
-    isPending: false,
     isDone: true,
     isSuccessful: true,
     isError: false,
@@ -34,26 +39,31 @@ QUnit.test('Running a basic task', async assert => {
 });
 
 QUnit.test('Running a basic task that throws', async assert => {
-  let task = new Task(async run => { throw 'zomg'; });
+  let step = 0;
+
+  let task = new Task(async run => {
+    assert.equal(++step, 1, '1. Before throw');
+    throw 'zomg';
+  });
+
+  assert.equal(step, 1, 'Task should be sync');
 
   assert.deepEqual(getState(task), {
-    isScheduled: true,
-    isRunning: false,
-    isPending: true,
+    isRunning: true,
     isDone: false,
     isSuccessful: false,
     isError: false,
     isCanceled: false
-  }, 'Scheduled');
+  }, 'Running');
 
   try {
     await task;
     assert.ok(false, 'This should not be reached');
   } catch(error) {
+    assert.equal(step, 1);
+
     assert.deepEqual(getState(task), {
-      isScheduled: false,
       isRunning: false,
-      isPending: false,
       isDone: true,
       isSuccessful: false,
       isError: true,
@@ -81,26 +91,26 @@ QUnit.test('Can await other runnables', async assert => {
 });
 
 QUnit.test('Can cancel immediately', async assert => {
+  let step = 0;
+
   let task = new Task(async run => {
-    assert.ok(false, 'This should not be reached');
+    assert.equal(++step, 1, '1. before return');
   });
 
+  assert.equal(step, 1, 'Task should be sync');
+
   assert.deepEqual(getState(task), {
-    isScheduled: true,
-    isRunning: false,
-    isPending: true,
+    isRunning: true,
     isDone: false,
     isSuccessful: false,
     isError: false,
     isCanceled: false
-  }, 'Scheduled');
+  }, 'Running');
 
   task.cancel('because reason');
 
   assert.deepEqual(getState(task), {
-    isScheduled: false,
     isRunning: false,
-    isPending: false,
     isDone: true,
     isSuccessful: false,
     isError: false,
@@ -111,10 +121,10 @@ QUnit.test('Can cancel immediately', async assert => {
     await task;
     assert.ok(false, 'This should not be reached');
   } catch(error) {
+    assert.equal(step, 1);
+
     assert.deepEqual(getState(task), {
-      isScheduled: false,
       isRunning: false,
-      isPending: false,
       isDone: true,
       isSuccessful: false,
       isError: false,
@@ -135,57 +145,60 @@ QUnit.test('Can cancel after making some progress', async assert => {
   let testBarrier = new Semaphore();
 
   let task = new Task(async run => {
-    assert.ok(++step, '1. Before un-interruptable await');
+    assert.equal(++step, 1, '1. Before un-interruptable await');
 
-    testBarrier.signal();
     await taskBarrier.wait();
 
-    assert.ok(++step, '2. Before interruptable await');
+    assert.equal(++step, 2, '2. Before interruptable await');
 
     testBarrier.signal();
-    await run(taskBarrier.wait());
+
+    await run(null);
 
     assert.ok(false, 'This should not be reached');
   });
 
-  assert.strictEqual(step, 0);
+  assert.equal(step, 1, 'Task should be sync');
 
   assert.deepEqual(getState(task), {
-    isScheduled: true,
-    isRunning: false,
-    isPending: true,
-    isDone: false,
-    isSuccessful: false,
-    isError: false,
-    isCanceled: false
-  }, 'Scheduled');
-
-  await testBarrier.wait();
-
-  assert.deepEqual(getState(task), {
-    isScheduled: false,
     isRunning: true,
-    isPending: true,
     isDone: false,
     isSuccessful: false,
     isError: false,
     isCanceled: false
   }, 'Running');
 
-  assert.equal(step, 1);
-
   task.cancel();
+
+  assert.deepEqual(getState(task), {
+    isRunning: false,
+    isDone: true,
+    isSuccessful: false,
+    isError: false,
+    isCanceled: true
+  }, 'Canceled');
+
+  taskBarrier.signal();
+  await testBarrier.wait();
+
+  assert.equal(step, 2);
+
+  assert.deepEqual(getState(task), {
+    isRunning: false,
+    isDone: true,
+    isSuccessful: false,
+    isError: false,
+    isCanceled: true
+  }, 'Canceled');
 
   try {
     await task;
     assert.ok(false, 'This should not be reached');
   } catch(error) {
-    assert.equal(step, 1);
+    assert.equal(step, 2);
 
     assert.deepEqual(getState(task), {
-      isScheduled: false,
       isRunning: false,
-      isPending: false,
       isDone: true,
       isSuccessful: false,
       isError: false,
@@ -199,75 +212,54 @@ QUnit.test('Can cancel after making some progress', async assert => {
     assert.throws(() => task.value);
     assert.throws(() => task.error);
   }
-
-  taskBarrier.signal();
-
-  await testBarrier.wait();
-
-  assert.equal(step, 2);
-
-  assert.deepEqual(getState(task), {
-    isScheduled: false,
-    isRunning: false,
-    isPending: false,
-    isDone: true,
-    isSuccessful: false,
-    isError: false,
-    isCanceled: true
-  }, 'Canceled');
 });
 
 QUnit.test('Can link tasks', async assert => {
   let a = new Task(async run => {
+    await run(null);
     assert.ok(false, 'This should not be reached');
   });
 
   let b = new Task(async run => {
+    await run(null);
     assert.ok(false, 'This should not be reached');
   });
 
   let c = new Task(async run => {
+    await run(null);
     return 'c';
   });
 
   b.link(a);
 
   assert.deepEqual(getState(a), {
-    isScheduled: true,
-    isRunning: false,
-    isPending: true,
+    isRunning: true,
     isDone: false,
     isSuccessful: false,
     isError: false,
     isCanceled: false
-  }, 'a: Scheduled');
+  }, 'a: Running');
 
   assert.deepEqual(getState(b), {
-    isScheduled: true,
-    isRunning: false,
-    isPending: true,
+    isRunning: true,
     isDone: false,
     isSuccessful: false,
     isError: false,
     isCanceled: false
-  }, 'b: Scheduled');
+  }, 'b: Running');
 
   assert.deepEqual(getState(c), {
-    isScheduled: true,
-    isRunning: false,
-    isPending: true,
+    isRunning: true,
     isDone: false,
     isSuccessful: false,
     isError: false,
     isCanceled: false
-  }, 'c: Scheduled');
+  }, 'c: Running');
 
   a.cancel();
 
   assert.deepEqual(getState(a), {
-    isScheduled: false,
     isRunning: false,
-    isPending: false,
     isDone: true,
     isSuccessful: false,
     isError: false,
@@ -275,9 +267,7 @@ QUnit.test('Can link tasks', async assert => {
   }, 'a: Canceled');
 
   assert.deepEqual(getState(b), {
-    isScheduled: false,
     isRunning: false,
-    isPending: false,
     isDone: true,
     isSuccessful: false,
     isError: false,
@@ -285,23 +275,19 @@ QUnit.test('Can link tasks', async assert => {
   }, 'b: Canceled');
 
   assert.deepEqual(getState(c), {
-    isScheduled: true,
-    isRunning: false,
-    isPending: true,
+    isRunning: true,
     isDone: false,
     isSuccessful: false,
     isError: false,
     isCanceled: false
-  }, 'c: Scheduled');
+  }, 'c: Running');
 
   try {
     await a;
     assert.ok(false, 'This should not be reached');
   } catch(error) {
     assert.deepEqual(getState(a), {
-      isScheduled: false,
       isRunning: false,
-      isPending: false,
       isDone: true,
       isSuccessful: false,
       isError: false,
@@ -314,9 +300,7 @@ QUnit.test('Can link tasks', async assert => {
     assert.ok(false, 'This should not be reached');
   } catch(error) {
     assert.deepEqual(getState(a), {
-      isScheduled: false,
       isRunning: false,
-      isPending: false,
       isDone: true,
       isSuccessful: false,
       isError: false,
@@ -327,9 +311,7 @@ QUnit.test('Can link tasks', async assert => {
   assert.equal(await c, 'c', 'Unlinked task is not canceled');
 
   assert.deepEqual(getState(c), {
-    isScheduled: false,
     isRunning: false,
-    isPending: false,
     isDone: true,
     isSuccessful: true,
     isError: false,
@@ -342,187 +324,129 @@ QUnit.test('Can link tasks via run.linked', async assert => {
   let taskBarrier = new Semaphore();
   let testBarrier = new Semaphore();
 
-  let a = new Task(async run => {
-    assert.ok(++step, '1. Before run.*');
+  // These should be synchronously assigned below.
+  // This is a hack to get TS to believe it.
+  let childLinked: Task<void> = null as any;
+  let childUnlinked: Task<string> = null as any;
 
-    testBarrier.signal();
-    await taskBarrier.wait();
+  let parent = new Task(async run => {
+    assert.equal(++step, 1, '1. Before run.*');
 
-    b = new Task(async run => {
-      assert.ok(++step, '2. Inside run.linked');
-      testBarrier.signal();
+    childLinked = new Task(async run => {
+      assert.equal(++step, 2, '2. Inside run.linked');
       await run(taskBarrier.wait());
       assert.ok(false, 'This should not be reached');
     });
 
-    c = new Task(async run => {
-      assert.ok(++step, '3. Inside run (unlinked)');
-      testBarrier.signal();
+    childUnlinked = new Task(async run => {
+      assert.equal(++step, 3, '3. Inside run (unlinked)');
       await run(taskBarrier.wait());
-      return 'c';
+      assert.equal(++step, 4, '4. Returning from run (unlinked)');
+      return 'childUnlinked';
     });
 
     await Promise.all([
-      run.linked(b),
-      run(c)
+      run.linked(childLinked),
+      run(childUnlinked) // unlinked
     ]);
 
     assert.ok(false, 'This should not be reached');
   });
 
-  let b: Task<void> | null = null;
-  let c: Task<string> | null = null;
+  assert.equal(step, 3, 'Tasks should be sync');
 
-  assert.strictEqual(step, 0);
+  assert.deepEqual(getState(parent), {
+    isRunning: true,
+    isDone: false,
+    isSuccessful: false,
+    isError: false,
+    isCanceled: false
+  }, 'parent: Running');
 
-  assert.deepEqual(getState(a), {
-    isScheduled: true,
+  assert.deepEqual(getState(childLinked), {
+    isRunning: true,
+    isDone: false,
+    isSuccessful: false,
+    isError: false,
+    isCanceled: false
+  }, 'childLinked: Running');
+
+  assert.deepEqual(getState(childUnlinked), {
+    isRunning: true,
+    isDone: false,
+    isSuccessful: false,
+    isError: false,
+    isCanceled: false
+  }, 'childUnlinked: Running');
+
+  parent.cancel();
+
+  assert.deepEqual(getState(parent), {
     isRunning: false,
-    isPending: true,
-    isDone: false,
-    isSuccessful: false,
-    isError: false,
-    isCanceled: false
-  }, 'a: Scheduled');
-
-  assert.strictEqual(b!, null);
-  assert.strictEqual(c!, null);
-
-  await testBarrier.wait();
-
-  assert.equal(step, 1);
-
-  assert.deepEqual(getState(a), {
-    isScheduled: false,
-    isRunning: true,
-    isPending: true,
-    isDone: false,
-    isSuccessful: false,
-    isError: false,
-    isCanceled: false
-  }, 'a: Running');
-
-  assert.strictEqual(b!, null);
-  assert.strictEqual(c!, null);
-
-  taskBarrier.signal();
-  await testBarrier.wait();
-  await testBarrier.wait();
-
-  assert.equal(step, 3);
-
-  assert.deepEqual(getState(a), {
-    isScheduled: false,
-    isRunning: true,
-    isPending: true,
-    isDone: false,
-    isSuccessful: false,
-    isError: false,
-    isCanceled: false
-  }, 'a: Running');
-
-  assert.deepEqual(getState(b!), {
-    isScheduled: false,
-    isRunning: true,
-    isPending: true,
-    isDone: false,
-    isSuccessful: false,
-    isError: false,
-    isCanceled: false
-  }, 'b: Running');
-
-  assert.deepEqual(getState(c!), {
-    isScheduled: false,
-    isRunning: true,
-    isPending: true,
-    isDone: false,
-    isSuccessful: false,
-    isError: false,
-    isCanceled: false
-  }, 'c: Running');
-
-  a.cancel();
-
-  assert.deepEqual(getState(a), {
-    isScheduled: false,
-    isRunning: false,
-    isPending: false,
     isDone: true,
     isSuccessful: false,
     isError: false,
     isCanceled: true
-  }, 'a: Canceled');
+  }, 'parent: Canceled');
 
-  assert.deepEqual(getState(b!), {
-    isScheduled: false,
+  assert.deepEqual(getState(childLinked), {
     isRunning: false,
-    isPending: false,
     isDone: true,
     isSuccessful: false,
     isError: false,
     isCanceled: true
-  }, 'b: Canceled');
+  }, 'childLinked: Canceled');
 
-  assert.deepEqual(getState(c!), {
-    isScheduled: false,
+  assert.deepEqual(getState(childUnlinked), {
     isRunning: true,
-    isPending: true,
     isDone: false,
     isSuccessful: false,
     isError: false,
     isCanceled: false
-  }, 'c: Running');
-
-  try {
-    await a;
-    assert.ok(false, 'This should not be reached');
-  } catch(error) {
-    assert.deepEqual(getState(a), {
-      isScheduled: false,
-      isRunning: false,
-      isPending: false,
-      isDone: true,
-      isSuccessful: false,
-      isError: false,
-      isCanceled: true
-    }, 'a: Canceled');
-  }
-
-  try {
-    await b;
-    assert.ok(false, 'This should not be reached');
-  } catch(error) {
-    assert.deepEqual(getState(b!), {
-      isScheduled: false,
-      isRunning: false,
-      isPending: false,
-      isDone: true,
-      isSuccessful: false,
-      isError: false,
-      isCanceled: true
-    }, 'b: Canceled');
-  }
+  }, 'childUnlinked: Running');
 
   taskBarrier.signalAll();
 
-  assert.equal(await c, 'c', 'Unlinked task is not canceled');
+  try {
+    await parent;
+    assert.ok(false, 'This should not be reached');
+  } catch(error) {
+    assert.deepEqual(getState(parent), {
+      isRunning: false,
+      isDone: true,
+      isSuccessful: false,
+      isError: false,
+      isCanceled: true
+    }, 'parent: Canceled');
+  }
 
-  assert.deepEqual(getState(c!), {
-    isScheduled: false,
+  try {
+    await childLinked;
+    assert.ok(false, 'This should not be reached');
+  } catch(error) {
+    assert.deepEqual(getState(childLinked), {
+      isRunning: false,
+      isDone: true,
+      isSuccessful: false,
+      isError: false,
+      isCanceled: true
+    }, 'childLinked: Canceled');
+  }
+
+  assert.equal(await childUnlinked, 'childUnlinked', 'Unlinked task is not canceled');
+
+  assert.deepEqual(getState(childUnlinked!), {
     isRunning: false,
-    isPending: false,
     isDone: true,
     isSuccessful: true,
     isError: false,
     isCanceled: false
-  }, 'c: Successful');
+  }, 'childUnlinked: Successful');
 });
 
 function getState(task: Task<any>) {
   return {
-    isScheduled: task.isScheduled,
     isRunning: task.isRunning,
-    isPending: task.isPending,
     isDone: task.isDone,
     isSuccessful: task.isSuccessful,
     isError: task.isError,
