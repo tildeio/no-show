@@ -1,0 +1,5 @@
+.vscode
+.travis.yml
+dist/tests
+tests
+package-lock.json
