@@ -1,4 +1,4 @@
-import Task, { isCancelation } from '../src';
+import Task, { isCancelation } from 'no-show';
 
 QUnit.module('Task');
 
