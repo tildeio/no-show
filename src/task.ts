@@ -7,9 +7,9 @@ export type TaskFunction<T> = (run: TaskRunner) => Promise<T>;
 
 function runner(task: Task<any>): TaskRunner {
   let run = async function <T>(runnable: Runnable<T>): Promise<T> {
-    task.yield();
+    task.abortIfCanceled();
     let result = await Promise.resolve(runnable);
-    task.yield();
+    task.abortIfCanceled();
     return result;
   } as TaskRunner;
 
@@ -69,7 +69,7 @@ export default class Task<T> implements Promise<T> {
       let run = async () => {
         try {
           let value = await func(runner(this));
-          this.yield();
+          this.abortIfCanceled();
           resolve(value);
         } catch(error) {
           if (isCancelation(error)) {
@@ -149,7 +149,7 @@ export default class Task<T> implements Promise<T> {
     return other;
   }
 
-  yield(): void {
+  abortIfCanceled(): void {
     if (this.isCanceled) {
       throw new CancelationError(this.reason);
     }
