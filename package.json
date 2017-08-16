@@ -1,6 +1,6 @@
 {
   "name": "no-show",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "description": "Tasks, a.k.a. cancelable Promises.",
   "contributors": [
     "Godfrey Chan <godfrey@tilde.io>"
