@@ -5,7 +5,7 @@ QUnit.module('Task');
 QUnit.test('Running a basic task', async assert => {
   let step = 0;
 
-  let task = new Task(async run => {
+  let task = new Task(async () => {
     assert.equal(++step, 1, '1. Before return');
     return 'it works';
   });
@@ -41,9 +41,9 @@ QUnit.test('Running a basic task', async assert => {
 QUnit.test('Running a basic task that throws', async assert => {
   let step = 0;
 
-  let task = new Task(async run => {
+  let task = new Task(async () => {
     assert.equal(++step, 1, '1. Before throw');
-    throw 'zomg';
+    throw new Error('zomg');
   });
 
   assert.equal(step, 1, 'Task should be sync');
@@ -59,7 +59,7 @@ QUnit.test('Running a basic task that throws', async assert => {
   try {
     await task;
     assert.ok(false, 'This should not be reached');
-  } catch(error) {
+  } catch (error) {
     assert.equal(step, 1);
 
     assert.deepEqual(getState(task), {
@@ -71,8 +71,8 @@ QUnit.test('Running a basic task that throws', async assert => {
     }, 'Error');
 
     assert.notOk(isCancelation(error), 'Should not throw a CancelationError');
-    assert.equal(error, 'zomg');
-    assert.equal(task.error, 'zomg');
+    assert.equal(error.message, 'zomg');
+    assert.equal(task.error.message, 'zomg');
     assert.throws(() => task.value);
     assert.throws(() => task.reason);
   }
@@ -93,7 +93,7 @@ QUnit.test('Can await other runnables', async assert => {
 QUnit.test('Can cancel immediately', async assert => {
   let step = 0;
 
-  let task = new Task(async run => {
+  let task = new Task(async () => {
     assert.equal(++step, 1, '1. before return');
   });
 
@@ -120,7 +120,7 @@ QUnit.test('Can cancel immediately', async assert => {
   try {
     await task;
     assert.ok(false, 'This should not be reached');
-  } catch(error) {
+  } catch (error) {
     assert.equal(step, 1);
 
     assert.deepEqual(getState(task), {
@@ -194,7 +194,7 @@ QUnit.test('Can cancel after making some progress', async assert => {
   try {
     await task;
     assert.ok(false, 'This should not be reached');
-  } catch(error) {
+  } catch (error) {
     assert.equal(step, 2);
 
     assert.deepEqual(getState(task), {
@@ -285,7 +285,7 @@ QUnit.test('Can link tasks', async assert => {
   try {
     await a;
     assert.ok(false, 'This should not be reached');
-  } catch(error) {
+  } catch (error) {
     assert.deepEqual(getState(a), {
       isRunning: false,
       isDone: true,
@@ -298,7 +298,7 @@ QUnit.test('Can link tasks', async assert => {
   try {
     await b;
     assert.ok(false, 'This should not be reached');
-  } catch(error) {
+  } catch (error) {
     assert.deepEqual(getState(a), {
       isRunning: false,
       isDone: true,
@@ -322,7 +322,6 @@ QUnit.test('Can link tasks', async assert => {
 QUnit.test('Can link tasks via run.linked', async assert => {
   let step = 0;
   let taskBarrier = new Semaphore();
-  let testBarrier = new Semaphore();
 
   // These should be synchronously assigned below.
   // This is a hack to get TS to believe it.
@@ -332,15 +331,15 @@ QUnit.test('Can link tasks via run.linked', async assert => {
   let parent = new Task(async run => {
     assert.equal(++step, 1, '1. Before run.*');
 
-    childLinked = new Task(async run => {
+    childLinked = new Task(async runInner => {
       assert.equal(++step, 2, '2. Inside run.linked');
-      await run(taskBarrier.wait());
+      await runInner(taskBarrier.wait());
       assert.ok(false, 'This should not be reached');
     });
 
-    childUnlinked = new Task(async run => {
+    childUnlinked = new Task(async runInner => {
       assert.equal(++step, 3, '3. Inside run (unlinked)');
-      await run(taskBarrier.wait());
+      await runInner(taskBarrier.wait());
       assert.equal(++step, 4, '4. Returning from run (unlinked)');
       return 'childUnlinked';
     });
@@ -410,7 +409,7 @@ QUnit.test('Can link tasks via run.linked', async assert => {
   try {
     await parent;
     assert.ok(false, 'This should not be reached');
-  } catch(error) {
+  } catch (error) {
     assert.deepEqual(getState(parent), {
       isRunning: false,
       isDone: true,
@@ -423,7 +422,7 @@ QUnit.test('Can link tasks via run.linked', async assert => {
   try {
     await childLinked;
     assert.ok(false, 'This should not be reached');
-  } catch(error) {
+  } catch (error) {
     assert.deepEqual(getState(childLinked), {
       isRunning: false,
       isDone: true,
@@ -455,7 +454,7 @@ function getState(task: Task<any>) {
 }
 
 class Semaphore {
-  private waiters: (() => void)[] = [];
+  private waiters: Array<() => void> = [];
 
   constructor(private value = 0) {
   }

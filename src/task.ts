@@ -1,21 +1,23 @@
+import { Option, assert } from 'ts-std';
 import CancelationError, { isCancelation } from './cancelation';
-import { Option, assert, isObject, isFunction } from './utils';
 
 export type Runnable<T> = T | PromiseLike<T>;
 export type TaskRunner = (<T>(runnable: Runnable<T>) => Promise<T>) & { linked<T>(other: Task<T>): Promise<T> };
 export type TaskFunction<T> = (run: TaskRunner) => Promise<T>;
 
 function runner(task: Task<any>): TaskRunner {
-  let run = async function <T>(runnable: Runnable<T>): Promise<T> {
+  type PartialTaskRunner = (<T>(runnable: Runnable<T>) => Promise<T>) & { linked?<T>(other: Task<T>): Promise<T> };
+
+  let run: PartialTaskRunner = async <T> (runnable: Runnable<T>): Promise<T> => {
     task.abortIfCanceled();
     let result = await Promise.resolve(runnable);
     task.abortIfCanceled();
     return result;
-  } as TaskRunner;
+  };
 
   run.linked = (other: Task<any>) => run(other.link(task));
 
-  return run;
+  return run as TaskRunner;
 }
 
 const enum Completion {
@@ -23,14 +25,17 @@ const enum Completion {
   Success,
   Error,
   Cancel
-};
+}
 
-function NOOP(){ }
+function NOOP() { /* no-op */ }
 
 const UNINITIALIZED = {};
 
 // TODO: should Task subclass Promise?
 export default class Task<T> implements Promise<T> {
+  // FIXME: this is required by the TS Promise interface
+  readonly [Symbol.toStringTag]: 'Promise';
+
   private _state = Completion.Running;
   private _linked: Option<Set<Task<any>>> = null;
   private _promise: Promise<T>;
@@ -71,7 +76,7 @@ export default class Task<T> implements Promise<T> {
           let value = await func(runner(this));
           this.abortIfCanceled();
           resolve(value);
-        } catch(error) {
+        } catch (error) {
           if (isCancelation(error)) {
             cancel(error.reason);
           } else {
@@ -82,21 +87,6 @@ export default class Task<T> implements Promise<T> {
 
       run();
     });
-  }
-
-  private _syncState(): Completion {
-    let { _result: result, _linked: linked } = this;
-
-    if (result === UNINITIALIZED && linked !== null) {
-      for (let task of linked) {
-        if (task.isCanceled) {
-          this.cancel(task.reason ? `Canceled by a linked task: ${task.reason}` : 'Canceled by a linked task');
-          break;
-        }
-      }
-    }
-
-    return this._state;
   }
 
   get isRunning(): boolean {
@@ -140,7 +130,7 @@ export default class Task<T> implements Promise<T> {
     return this._result;
   }
 
-  link<T>(other: Task<T>): Task<T> {
+  link<U>(other: Task<U>): Task<U> {
     if (this.isRunning) {
       this._linked = this._linked || new Set();
       this._linked.add(other);
@@ -180,6 +170,18 @@ export default class Task<T> implements Promise<T> {
     return this._promise.catch(onrejected);
   }
 
-  // FIXME: this is required by the TS Promise interface
-  public readonly [Symbol.toStringTag]: "Promise";
+  private _syncState(): Completion {
+    let { _result: result, _linked: linked } = this;
+
+    if (result === UNINITIALIZED && linked !== null) {
+      for (let task of linked) {
+        if (task.isCanceled) {
+          this.cancel(task.reason ? `Canceled by a linked task: ${task.reason}` : 'Canceled by a linked task');
+          break;
+        }
+      }
+    }
+
+    return this._state;
+  }
 }
